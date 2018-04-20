@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
 import vggf
+import os
 
 class model(object):
     """The PTB model."""
@@ -18,7 +19,19 @@ class model(object):
         theta = tf.mul(1.0 / 2, tf.matmul(U0, tf.transpose(Ux)))
         B_code = tf.sign(U0)
         loss = tf.div(
-            (- 2.0 * tf.reduce_sum(tf.mul(S, theta) - (tf.max(0,theta)+tf.log(tf.exp(tf.abs(-theta))+1)))) + config.lamda * tf.reduce_sum(tf.pow((B_code - U0), 2)),
+            (-tf.reduce_sum(tf.mul(S, theta)-tf.nn.softplus(theta))) + config.lamda * tf.reduce_sum(tf.pow((B_code - U0), 2)),
             float(config.N_size*config.batch_size))
-
+        
         self.train_step = tf.train.GradientDescentOptimizer(lrx).minimize(loss)
+        self.model_path = config.model_path
+        self.saver = tf.train.Saver()
+        if not os.path.exists(self.model_path):
+            os.makedirs(self.model_path)
+     
+    def save(self,sess):
+        print 'model save'
+        self.saver.save(sess, self.model_path+'/model.ckpt')     
+        
+    def restore(self,sess):
+        print 'model restore'
+        self.saver.restore(sess, self.model_path+'/model.ckpt')

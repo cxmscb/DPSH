@@ -116,38 +116,39 @@ def calcNeighbor_L(L1, L2):
 class get_config():
 
   """Small config."""
-  maxIter = 150
+  maxIter = 250
   lamda = 10.0
-  lr = 0.005
+  lr = np.logspace(-2,-6,maxIter)
   codelens = 32
   batch_size = 128
 
-  def __init__(self, _N_size,_vgg_path):
+  def __init__(self, _N_size,_vgg_path,_model_path):
 
     self.N_size = _N_size
     self.vgg_path = _vgg_path
+    self.model_path = _model_path
 
 
 if __name__ == "__main__":
 
-    vgg_path = './imagenet-vgg-f.mat'
+    vgg_path = 'imagenet-vgg-f.mat'
+    model_path = 'train_model'
     mat = scipy.io.loadmat('cifar-10.mat')
     train_data = mat['train_data'].transpose(3, 0, 1 , 2).astype(np.float32)
     train_L = mat['train_L'].astype(np.float32)
-    dataset_L = mat['dataset_L'].astype(np.float32)
     test_L = mat['test_L'].astype(np.float32)
-    data_set = mat['data_set'].transpose(3, 0, 1 , 2).astype(np.float32)
     test_data = mat['test_data'].transpose(3, 0, 1 , 2).astype(np.float32)
+    dataset_L = np.concatenate((train_L,test_L))
+    data_set = np.concatenate((train_data,test_data))
 
     N_train = train_L.shape[0]
     N_train_index = np.arange(N_train)
     map_record = []
     loss_record = []
-    config = get_config(N_train,vgg_path)
+    config = get_config(N_train,vgg_path,model_path)
 
     U = np.zeros((train_data.shape[0], config.codelens))  # for caculating loss
     U_train = np.zeros((N_train, config.codelens))   # for updating U
-    lr = config.lr
     
     gpuconfig = tf.ConfigProto(
         gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.8)
@@ -157,13 +158,15 @@ if __name__ == "__main__":
         train_model = DPSH_model.model(config)
         session.run(tf.initialize_all_variables())
         start = time.clock()
+        if tf.train.lastest_checkpoint(config.model_path):
+            train_model.restore(session)
         for iter in xrange(config.maxIter):
-            if iter % 10 == 0 and iter != 0:
-                lr = lr * 0.8
+            print 'iter ---%d----'%(iter)
+            lr = config.lr[iter]
             U_train = train_net(train_data, train_L, U_train, lr, train_model)
 
             #caculate loss
-            if iter % 5 == 0 :
+            if iter % 10 == 0 :
                 S_ = calcNeighbor_L(train_L, train_L)
                 for j in xrange(N_train / config.batch_size + 1):
                     ##random select a minibatch
@@ -172,7 +175,6 @@ if __name__ == "__main__":
                 print iter
                 theta_train = 1.0 / 2 * U.dot(np.transpose(U))
                 theta_train_ = 1+np.log(np.exp(theta_train))
-                print iter
                 B_code = np.sign(U)
                 loss_ = np.divide((- np.sum(np.multiply(S_, theta_train) - theta_train_) + config.lamda * np.sum(
                     np.power((B_code - U), 2))), float(config.N_size*config.batch_size))
@@ -182,6 +184,7 @@ if __name__ == "__main__":
                 map = test(train_model, dataset_L, test_L, data_set, test_data, config.batch_size)
                 map_record.append(map)
                 print "iter %d map:%f" % (iter, map)
+                train_model.save(session)
         plt.plot(loss_record)
         plt.show()
 
